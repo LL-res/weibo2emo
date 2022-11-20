@@ -1,4 +1,4 @@
-module weibo2emo
+module github.com/emomo/weibo2emo
 
 go 1.18
 

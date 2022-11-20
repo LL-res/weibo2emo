@@ -2,6 +2,8 @@ package service
 
 import (
 	"encoding/csv"
+	"github.com/emomo/weibo2emo/internal/tools"
+	types "github.com/emomo/weibo2emo/internal/type"
 	"io"
 	"log"
 	"os"
@@ -9,9 +11,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
-	"weibo2emo/internal/tools"
-	types "weibo2emo/internal/type"
 
 	"github.com/schollz/progressbar/v3"
 	"github.com/yanyiwu/gojieba"
@@ -129,33 +130,38 @@ func (p *Processor) ExportResult(path string) error {
 		log.Println("E ! 写入结果数据集时首行错误", err)
 	}
 	w.Flush()
-	dataToFlush := make([][]string, 0, len(p.Posts))
-
+	dataToFlush := make([][]string, len(p.Posts))
+	group := sync.WaitGroup{}
+	barLock := sync.Mutex{}
+	limitChan := make(chan struct{}, 50)
+	group.Add(len(p.Posts))
 	for i, post := range p.Posts {
-		p.resetCountMap()
-		slices := p.Slicer.Cut(tools.RemoveName(post.Content), true)
-		for _, s := range slices {
-			existKeys := tools.CheckExistanceInMap(s, p.Dictionary)
-			for _, keyEmo := range existKeys {
-				p.CountMap[keyEmo]++
+		limitChan <- struct{}{}
+		go func(i int, post types.Post) {
+			defer group.Done()
+			countMap := make(map[string]int)
+			slices := p.Slicer.Cut(tools.RemoveName(post.Content), true)
+			for _, s := range slices {
+				existKeys := tools.CheckExistanceInMap(s, p.Dictionary)
+				for _, keyEmo := range existKeys {
+					countMap[keyEmo]++
+				}
 			}
-		}
-
-		toWriteDate := post.RawData
-		toWriteDate = append(toWriteDate, tools.RemoveMark(slices))
-		for _, v := range p.EmoKey {
-			toWriteDate = append(toWriteDate, strconv.Itoa(p.CountMap[v]))
-			p.Posts[i].TimeData = append(p.Posts[i].TimeData, p.CountMap[v])
-		}
-		dataToFlush = append(dataToFlush, toWriteDate)
-		//err = w.Write(toWriteDate)
-		bar.Add(1)
-		if err != nil {
-			log.Println("E ! 写入结果数据集时出现一行错误", err)
-			continue
-		}
-		//w.Flush()
+			toWriteDate := post.RawData
+			toWriteDate = append(toWriteDate, tools.RemoveMark(slices))
+			for _, v := range p.EmoKey {
+				toWriteDate = append(toWriteDate, strconv.Itoa(countMap[v]))
+				p.Posts[i].TimeData = append(p.Posts[i].TimeData, countMap[v])
+			}
+			dataToFlush[i] = toWriteDate
+			//err = w.Write(toWriteDate)
+			barLock.Lock()
+			bar.Add(1)
+			barLock.Unlock()
+			<-limitChan
+		}(i, post)
 	}
+	group.Wait()
 	w.WriteAll(dataToFlush)
 	w.Flush()
 	return nil

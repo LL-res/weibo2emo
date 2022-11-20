@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
+	"github.com/emomo/weibo2emo/internal/service"
 	"log"
-	"weibo2emo/internal/service"
 )
 
 var (
