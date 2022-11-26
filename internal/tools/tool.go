@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"math"
 	"strconv"
 	"strings"
 )
@@ -112,4 +113,65 @@ func ConvIs2Ss(slices []int) []string {
 		result = append(result, strconv.Itoa(v))
 	}
 	return result
+}
+func GetMaxS(x, y string) string {
+	if x < y {
+		return y
+	}
+	return x
+}
+func getGrade(xstr, maxstr string, grade int, trans func(float64) float64) (result string, err error) {
+	x, err := strconv.ParseFloat(xstr, 64)
+	if err != nil {
+		return "", err
+	}
+	max, err := strconv.ParseFloat(maxstr, 64)
+	if err != nil {
+		return "", err
+	}
+	unit := trans(float64(max)) / float64(grade)
+	x = trans(x)
+	for i := 1; i <= grade; i++ {
+		if x < float64(i)*unit {
+			return strconv.Itoa(i), nil
+		}
+	}
+	return strconv.Itoa(grade), nil
+}
+func GetGrades(xstr, maxstr []string, grade int, trans func(float64) float64) ([]string, error) {
+	result := make([]string, 0, len(maxstr))
+	for i, _ := range maxstr {
+		grade, err := getGrade(xstr[i], maxstr[i], grade, trans)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, grade)
+	}
+	return result, nil
+}
+func Linear(x float64) float64 {
+	return x
+}
+func Sigmoid(x float64) float64 {
+	return 1/(1+math.Exp(-x)) - 0.5
+}
+func Tanh(x float64) float64 {
+	return 2/(1+math.Exp(-2*x)) - 1
+}
+func Log(x float64) float64 {
+	return math.Log(x + 1)
+}
+func F(f string) func(x float64) float64 {
+	switch f {
+	case "linear":
+		return Linear
+	case "log":
+		return Log
+	case "sigmoid":
+		return Sigmoid
+	case "tanh":
+		return Tanh
+	default:
+		return Linear
+	}
 }

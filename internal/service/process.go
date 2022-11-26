@@ -133,7 +133,7 @@ func (p *Processor) ExportResult(path string) error {
 	dataToFlush := make([][]string, len(p.Posts))
 	group := sync.WaitGroup{}
 	barLock := sync.Mutex{}
-	limitChan := make(chan struct{}, 50)
+	limitChan := make(chan struct{}, 5)
 	group.Add(len(p.Posts))
 	for i, post := range p.Posts {
 		limitChan <- struct{}{}
