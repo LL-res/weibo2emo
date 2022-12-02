@@ -30,7 +30,7 @@ func main() {
 	flag.StringVar(&GradePath, "gp", "", "待分级的数据集(.csv)所在路径 示例 ./result_time.csv (如要进行分级统计，则必填，否则，非必填)")
 	flag.StringVar(&ResultGradePath, "gr", "./result_grade.csv", "获取到的分级结果，默认导出在当前目录，名称为result_grade.csv，如想自定义导出，一定要精确到文件名 (选填)")
 	flag.StringVar(&TransFunc, "gf", "linear", "分级时所使用的映射函数，目前可选的有 \n linear : f(x) = x \n log : f(x) = ln(x + 1) \n sigmoid : f(x) = 1 / (1 + exp(-x)) + 0.5 \n tanh : 2 / (1 + exp(-2x)) -1 \n 默认使用线性函数 (选填)")
-	flag.IntVar(&Grade, "gn", 5, "所要分出的等级数量，默认为 5")
+	flag.IntVar(&Grade, "gn", 5, "所要分出的等级数量，默认为 5 (选填)")
 	flag.Parse()
 
 	if GradePath != "" {
