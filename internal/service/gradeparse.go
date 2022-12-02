@@ -10,13 +10,15 @@ import (
 )
 
 type GradeParser struct {
+	Grade int
 	Data  [][]string
 	Heads []string
 	Times []string
 }
 
-func NewGradeParser() *GradeParser {
+func NewGradeParser(grade int) *GradeParser {
 	return &GradeParser{
+		Grade: grade,
 		Data:  make([][]string, 0),
 		Heads: make([]string, 0),
 		Times: make([]string, 0),
@@ -80,7 +82,7 @@ func (g *GradeParser) ExportResult(path string, trans func(float64) float64) err
 	result := make([][]string, 0, len(g.Data))
 	result = append(result, g.Heads)
 	for i, v := range g.Data {
-		grades, err := tools.GetGrades(v, maxSlice, 5, trans)
+		grades, err := tools.GetGrades(v, maxSlice, g.Grade, trans)
 		if err != nil {
 			log.Println("获取等级失败，时间 :", g.Times[i], err)
 			result = append(result, []string{g.Times[i]})
