@@ -175,3 +175,11 @@ func F(f string) func(x float64) float64 {
 		return Linear
 	}
 }
+func ConvStrs2Ints(strs []string) []float64 {
+	result := make([]float64, len(strs))
+	for _, v := range strs {
+		t, _ := strconv.ParseFloat(v, 64)
+		result = append(result, t)
+	}
+	return result
+}
