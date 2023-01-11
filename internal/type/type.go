@@ -7,4 +7,9 @@ type Post struct {
 	Content  string
 	RawData  []string
 	TimeData []int
+	Likes    int
+	Comments int
+	Shares   int
+	userID   string
+	userType string
 }

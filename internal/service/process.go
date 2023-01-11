@@ -81,7 +81,7 @@ func (p *Processor) LoadPosts(path string) error {
 	r := csv.NewReader(reader)
 	r.LazyQuotes = true
 	isheader := true
-	for {
+	for num := 1; ; num++ {
 		if isheader {
 			isheader = false
 			continue
@@ -91,19 +91,26 @@ func (p *Processor) LoadPosts(path string) error {
 			break
 		}
 		if err != nil {
-			log.Println("E! 读取博文时有一行数据读取失败，但我们接着读", err)
+			log.Printf("E! 读取博文时%d行读取失败 %v", num, err)
 			continue
 		}
 		t, err := time.Parse("01月02日 15:04", row[2])
 
 		if err != nil {
-			log.Println("E! 读取博文时有一行数据时间转换失败，但我们接着读", err)
+			log.Printf("E! 读取博文时%d行数据时间转换失败 %v", num, err)
+			//log.Println("E! 读取博文时有一行数据时间转换失败，但我们接着读", err)
 			continue
 		}
+		likes, _ := strconv.Atoi(row[3])
+		comments, _ := strconv.Atoi(row[4])
+		shares, _ := strconv.Atoi(row[5])
 		post := types.Post{
-			Time:    t,
-			Content: row[1],
-			RawData: row,
+			Time:     t,
+			Content:  row[1],
+			RawData:  row,
+			Likes:    likes,
+			Comments: comments,
+			Shares:   shares,
 		}
 		p.Posts = append(p.Posts, post)
 	}
@@ -153,6 +160,7 @@ func (p *Processor) ExportResult(path string) error {
 				toWriteDate = append(toWriteDate, strconv.Itoa(countMap[v]))
 				p.Posts[i].TimeData = append(p.Posts[i].TimeData, countMap[v])
 			}
+			p.Posts[i].TimeData = append(p.Posts[i].TimeData, post.Likes, post.Comments, post.Shares)
 			dataToFlush[i] = toWriteDate
 			//err = w.Write(toWriteDate)
 			barLock.Lock()
@@ -194,6 +202,7 @@ func (p *Processor) ExportResultByTime(path string) error {
 	dataToWrite := make([][]string, 0, len(tmap))
 	header := []string{"日期"}
 	header = append(header, p.EmoKey...)
+	header = append(header, "点赞数", "评论数", "转发数")
 	dataToWrite = append(dataToWrite, header)
 	sortTemp := make([]string, 0, len(tmap))
 	for k := range tmap {

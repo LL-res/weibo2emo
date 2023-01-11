@@ -10,7 +10,7 @@ func TestProcessor_ExportResult(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	err = p.LoadDictionary("C:\\Users\\LL\\Desktop\\LIWC.csv")
+	err = p.LoadDictionary("C:\\Users\\LL\\Desktop\\LIWC1.csv")
 	if err != nil {
 		t.Error(err)
 	}
