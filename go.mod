@@ -7,6 +7,7 @@ require (
 	github.com/yanyiwu/gojieba v1.2.0
 	golang.org/x/text v0.4.0
 	gonum.org/v1/plot v0.12.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -19,6 +20,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.14 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/rivo/uniseg v0.4.2 // indirect
+	github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d // indirect
 	golang.org/x/image v0.0.0-20220902085622-e7cb96979f69 // indirect
 	golang.org/x/sys v0.1.0 // indirect
 	golang.org/x/term v0.1.0 // indirect

@@ -2,11 +2,12 @@ package service
 
 import (
 	"encoding/csv"
-	"github.com/emomo/weibo2emo/internal/tools"
-	"github.com/schollz/progressbar/v3"
 	"io"
 	"log"
 	"os"
+
+	"github.com/emomo/weibo2emo/internal/tools"
+	"github.com/schollz/progressbar/v3"
 )
 
 type GradeParser struct {
@@ -30,8 +31,10 @@ func (g *GradeParser) LoadGradeData(path string) error {
 		return err
 	}
 	defer f.Close()
-	//reader := transform.NewReader(f, simplifiedchinese.GBK.NewDecoder())
-	r := csv.NewReader(f)
+	r, err := tools.DetectCSV(f)
+	if err != nil {
+		log.Println("WARN ! 编码格式检测失败，使用utf-8开始解码")
+	}
 	r.LazyQuotes = true
 	isHead := true
 	for {

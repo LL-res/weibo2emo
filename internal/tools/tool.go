@@ -1,9 +1,15 @@
 package tools
 
 import (
+	"encoding/csv"
+	"errors"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 	"math"
+	"os"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 func RemoveName(content string) string {
@@ -182,4 +188,24 @@ func ConvStrs2Ints(strs []string) []float64 {
 		result = append(result, t)
 	}
 	return result
+}
+func DetectCSV(file *os.File) (*csv.Reader, error) {
+	r := csv.NewReader(file)
+	r.FieldsPerRecord = -1
+	row, err := r.Read()
+	if err != nil || len(row) == 0 {
+		file.Seek(0, 0)
+		r1 := csv.NewReader(file)
+		return r1, errors.New("failed detection")
+	}
+	if utf8.ValidString(string(row[0])) {
+		file.Seek(0, 0)
+		r1 := csv.NewReader(file)
+		return r1, nil
+	}
+	file.Seek(0, 0)
+	reader := transform.NewReader(file, simplifiedchinese.GBK.NewDecoder())
+	result := csv.NewReader(reader)
+	result.FieldsPerRecord = -1
+	return result, nil
 }

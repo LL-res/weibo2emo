@@ -1,18 +1,19 @@
 package service
 
 import (
-	"encoding/csv"
 	"fmt"
-	"gonum.org/v1/plot"
-	"gonum.org/v1/plot/plotter"
-	"gonum.org/v1/plot/plotutil"
-	"gonum.org/v1/plot/vg"
+	"github.com/emomo/weibo2emo/internal/tools"
 	"io"
 	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/plotutil"
+	"gonum.org/v1/plot/vg"
 )
 
 type Painter struct {
@@ -37,7 +38,10 @@ func (p *Painter) Load(path string) error {
 		return err
 	}
 	defer f.Close()
-	r := csv.NewReader(f)
+	r, err := tools.DetectCSV(f)
+	if err != nil {
+		log.Println("WARN ! 编码格式检测失败，使用utf-8开始解码")
+	}
 	r.LazyQuotes = true
 	isHead := true
 	for {

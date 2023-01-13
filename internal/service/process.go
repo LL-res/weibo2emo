@@ -2,8 +2,10 @@ package service
 
 import (
 	"encoding/csv"
+	"fmt"
 	"github.com/emomo/weibo2emo/internal/tools"
 	types "github.com/emomo/weibo2emo/internal/type"
+	"gopkg.in/yaml.v3"
 	"io"
 	"log"
 	"os"
@@ -11,14 +13,15 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/schollz/progressbar/v3"
 	"github.com/yanyiwu/gojieba"
-	"golang.org/x/text/encoding/simplifiedchinese"
-	"golang.org/x/text/transform"
 )
+
+type TypeMap map[string][]string
 
 type Processor struct {
 	Dictionary map[string][]string // key : emo kind , val :words
@@ -26,8 +29,68 @@ type Processor struct {
 	Slicer     *gojieba.Jieba
 	CountMap   map[string]int
 	EmoKey     []string
+	TypeMap    TypeMap //key :关键的用户id , val : 这个id所属的类型，可能是多种
+	TypeNum    int
 }
 
+func (p *Processor) FillTypeMap(path string) error {
+	f, err := os.Open("./conf/catagory.yaml")
+	if err != nil {
+		log.Println("无法打开类型名称配置文件", err)
+		return err
+	}
+	defer f.Close()
+	bytes, err := io.ReadAll(f)
+	if err != nil {
+		log.Println("无法读取类型名称配置文件", err)
+		return err
+	}
+	names := types.TypeName{}
+	namesMap := make(map[string]string)
+	err = yaml.Unmarshal(bytes, &names)
+	if err != nil {
+		log.Println("unmarshal err", err)
+		return err
+	}
+	p.TypeNum = len(names.Names) + 1
+	for k, ns := range names.Names {
+		fillMap(namesMap, k, ns)
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		log.Println("无法打开 名称 id 表", err)
+		return err
+	}
+	defer file.Close()
+	r, err := tools.DetectCSV(file)
+	if err != nil {
+		log.Println("WARN ! 编码格式检测失败，使用utf-8开始解码")
+	}
+	head := true
+	for num := 1; ; num++ {
+		row, err := r.Read()
+		if head {
+			head = false
+			continue
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Printf("读取 名称 id 表%d行失败%v", num, err)
+			continue
+		}
+		for k, ns := range names.Names { // k : media,municiplity,authority ,ns : chinese names
+			for _, n := range ns { // n : name
+				if strings.Contains(row[0], n) { // row[0] : content
+					p.TypeMap.insert(row[1], k) // row[1] : id
+				}
+			}
+		}
+	}
+	return nil
+}
 func NewProcessor() *Processor {
 	dictDir := path.Join(filepath.Dir(os.Args[0]), "dict")
 	jiebaPath := path.Join(dictDir, "jieba.dict.utf8")
@@ -41,6 +104,7 @@ func NewProcessor() *Processor {
 		Slicer:     gojieba.NewJieba(jiebaPath, hmmPath, userPath, idfPath, stopPath),
 		CountMap:   make(map[string]int),
 		EmoKey:     make([]string, 0),
+		TypeMap:    NewTypeMap(),
 	}
 }
 
@@ -50,17 +114,25 @@ func (p *Processor) LoadDictionary(path string) error {
 		return err
 	}
 	defer f.Close()
-	reader := transform.NewReader(f, simplifiedchinese.GBK.NewDecoder())
-	r := csv.NewReader(reader)
+	r, err := tools.DetectCSV(f)
+	if err != nil {
+		log.Println("WARN ! 编码格式检测失败，使用utf-8开始解码")
+	}
 	r.LazyQuotes = true
 	for {
-		row, err := r.Read()
+		rawRow, err := r.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			log.Println("E! 读取词库时有一行数据读取失败，但我们接着读", err)
+			log.Println("E! 读取词库时有一行数据读取失败", err)
 			continue
+		}
+		row := make([]string, 0)
+		for _, v := range rawRow {
+			if v != "" {
+				row = append(row, v)
+			}
 		}
 		p.EmoKey = append(p.EmoKey, row[0])
 		p.Dictionary[row[0]] = row[1:]
@@ -77,18 +149,20 @@ func (p *Processor) LoadPosts(path string) error {
 		return err
 	}
 	defer f.Close()
-	reader := transform.NewReader(f, simplifiedchinese.GBK.NewDecoder())
-	r := csv.NewReader(reader)
+	r, err := tools.DetectCSV(f)
+	if err != nil {
+		log.Println("WARN ! 编码格式检测失败，使用utf-8开始解码")
+	}
 	r.LazyQuotes = true
 	isheader := true
 	for num := 1; ; num++ {
-		if isheader {
-			isheader = false
-			continue
-		}
 		row, err := r.Read()
 		if err == io.EOF {
 			break
+		}
+		if isheader {
+			isheader = false
+			continue
 		}
 		if err != nil {
 			log.Printf("E! 读取博文时%d行读取失败 %v", num, err)
@@ -111,6 +185,8 @@ func (p *Processor) LoadPosts(path string) error {
 			Likes:    likes,
 			Comments: comments,
 			Shares:   shares,
+			UserID:   row[0],
+			UserType: p.TypeMap[row[0]],
 		}
 		p.Posts = append(p.Posts, post)
 	}
@@ -187,31 +263,65 @@ func (p *Processor) ExportResultByTime(path string) error {
 		log.Println("E ! 写入Bomm头错误", err)
 	}
 	w := csv.NewWriter(f)
-	tmap := make(map[string][]int) // key date ,val
+	tmap := make(map[string][]int)       //key : 时间与类型拼接 val 各项指标的值，如情绪，点赞转发数等
+	timeSet := make(map[string]struct{}) // 时间
 	for i := 0; i < len(p.Posts); i++ {
-		key := p.Posts[i].Time.Format("01月02日 15 时")
-		if _, ok := tmap[key]; ok {
-			tools.AddTwoSlices(tmap[key], p.Posts[i].TimeData)
+		timeKey := p.Posts[i].Time.Format("01月02日 15 时")
+		timeSet[timeKey] = struct{}{}
+		keys := make([]string, 0) //一条博文的userType可能有多种
+
+		if p.Posts[i].UserType == nil {
+			keys = append(keys, fmt.Sprintf("%s$A-normal", timeKey))
 		} else {
-			tt := make([]int, len(p.Posts[i].TimeData))
-			copy(tt, p.Posts[i].TimeData)
-			tmap[key] = tt
+			for _, v := range p.Posts[i].UserType {
+				keys = append(keys, fmt.Sprintf("%s$%s", timeKey, v))
+			}
+		}
+		for _, key := range keys {
+			if _, ok := tmap[key]; ok {
+				tools.AddTwoSlices(tmap[key], p.Posts[i].TimeData)
+			} else {
+				tt := make([]int, len(p.Posts[i].TimeData))
+				copy(tt, p.Posts[i].TimeData)
+				tmap[key] = tt
+			}
 		}
 		bar.Add(1)
 	}
-	dataToWrite := make([][]string, 0, len(tmap))
+	dataToWrite := make([][]string, 0, len(timeSet))
 	header := []string{"日期"}
-	header = append(header, p.EmoKey...)
-	header = append(header, "点赞数", "评论数", "转发数")
+	three := []string{"点赞数", "评论数", "转发数"}
+	for i := 1; i <= p.TypeNum; i++ {
+		for _, v := range append(p.EmoKey, three...) { //把情绪跟那几个数后面都加一个第几类的后缀
+			header = append(header, fmt.Sprintf("%s-第%d类", v, i))
+		}
+	}
 	dataToWrite = append(dataToWrite, header)
 	sortTemp := make([]string, 0, len(tmap))
 	for k := range tmap {
 		sortTemp = append(sortTemp, k)
 	}
-	sort.Strings(sortTemp)
-	for _, v := range sortTemp {
-		singleData := []string{v}
-		singleData = append(singleData, tools.ConvIs2Ss(tmap[v])...)
+	sortTime := make([]string, 0, len(timeSet))
+	for k := range timeSet {
+		sortTime = append(sortTime, k)
+	}
+	sort.Strings(sortTime) // 01 01
+	sort.Strings(sortTemp) // 01 01 $ A
+
+	var ptr int
+	for _, v := range sortTime {
+		singleData := make([]string, (p.TypeNum)*(len(p.EmoKey)+3)+1) //有几类就会有几个维度，并且还会有一个最开始的时间
+		singleData[0] = v
+		for ; ptr < len(sortTemp); ptr++ {
+			if !strings.HasPrefix(sortTemp[ptr], v) {
+				break //如果完全键的时间不在是传入的时间，则进行下一个时间的统计
+			}
+			level := extractLevel(sortTemp[ptr])
+			singleWrite := tools.ConvIs2Ss(tmap[sortTemp[ptr]])
+			for i, num := range singleWrite {
+				singleData[1+(level-1)*(len(p.EmoKey)+3)+i] = num
+			}
+		}
 		dataToWrite = append(dataToWrite, singleData)
 	}
 	err = w.WriteAll(dataToWrite)
@@ -224,4 +334,30 @@ func (p *Processor) ExportResultByTime(path string) error {
 }
 func (p *Processor) resetCountMap() {
 	p.CountMap = make(map[string]int)
+}
+func fillMap(namesMap map[string]string, val string, keys []string) {
+	for _, k := range keys {
+		namesMap[k] = val
+	}
+}
+func (t TypeMap) insert(key string, val string) {
+	if t[key] == nil {
+		t[key] = make([]string, 0)
+	}
+	for _, v := range t[key] {
+		if v == val {
+			return
+		}
+	}
+	t[key] = append(t[key], val)
+}
+func NewTypeMap() TypeMap {
+	t := make(map[string][]string)
+	return t
+}
+
+// given 01月01日 15时$A-normal output 1
+func extractLevel(s string) int {
+	strs := strings.Split(s, "$")
+	return int(strs[1][0] - 'A' + 1)
 }

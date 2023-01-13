@@ -10,6 +10,9 @@ type Post struct {
 	Likes    int
 	Comments int
 	Shares   int
-	userID   string
-	userType string
+	UserID   string
+	UserType []string
+}
+type TypeName struct {
+	Names map[string][]string `yaml:"names"`
 }

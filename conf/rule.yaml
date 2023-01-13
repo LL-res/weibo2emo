@@ -1,0 +1,7 @@
+rules:
+  - name: 危险感
+    wordKey:
+      - 恐惧
+  - name: 不可控感
+    wordKey:
+        -
