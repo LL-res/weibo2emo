@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/csv"
 	"fmt"
+	"github.com/emomo/weibo2emo/database"
 	"github.com/emomo/weibo2emo/internal/tools"
 	types "github.com/emomo/weibo2emo/internal/type"
 	"gopkg.in/yaml.v3"
@@ -24,13 +25,15 @@ import (
 type TypeMap map[string][]string
 
 type Processor struct {
-	Dictionary map[string][]string // key : emo kind , val :words
-	Posts      []types.Post
-	Slicer     *gojieba.Jieba
-	CountMap   map[string]int
-	EmoKey     []string
-	TypeMap    TypeMap //key :关键的用户id , val : 这个id所属的类型，可能是多种
-	TypeNum    int
+	Dictionary  map[string][]string // key : emo kind , val :words
+	Posts       []types.Post
+	Slicer      *gojieba.Jieba
+	CountMap    map[string]int
+	EmoKey      []string
+	TypeMap     TypeMap //key :关键的用户id , val : 这个id所属的类型，可能是多种
+	TypeNum     int
+	ToDB        bool
+	Concurrency int
 }
 
 func (p *Processor) FillTypeMap(path string) error {
@@ -45,8 +48,8 @@ func (p *Processor) FillTypeMap(path string) error {
 		log.Println("无法读取类型名称配置文件", err)
 		return err
 	}
-	names := types.TypeName{}
-	namesMap := make(map[string]string)
+	names := types.TypeName{}           // key 种类 val 包含的词
+	namesMap := make(map[string]string) //key 包含的词，val 这个词的类型
 	err = yaml.Unmarshal(bytes, &names)
 	if err != nil {
 		log.Println("unmarshal err", err)
@@ -169,7 +172,7 @@ func (p *Processor) LoadPosts(path string) error {
 			continue
 		}
 		t, err := time.Parse("01月02日 15:04", row[2])
-
+		t = t.AddDate(2020, 0, 0)
 		if err != nil {
 			log.Printf("E! 读取博文时%d行数据时间转换失败 %v", num, err)
 			//log.Println("E! 读取博文时有一行数据时间转换失败，但我们接着读", err)
@@ -179,14 +182,15 @@ func (p *Processor) LoadPosts(path string) error {
 		comments, _ := strconv.Atoi(row[4])
 		shares, _ := strconv.Atoi(row[5])
 		post := types.Post{
-			Time:     t,
-			Content:  row[1],
-			RawData:  row,
-			Likes:    likes,
-			Comments: comments,
-			Shares:   shares,
-			UserID:   row[0],
-			UserType: p.TypeMap[row[0]],
+			Time:        t,
+			Content:     row[1],
+			RawData:     row,
+			Likes:       likes,
+			Comments:    comments,
+			Shares:      shares,
+			UserID:      row[0],
+			UserType:    p.TypeMap[row[0]],
+			EmoKeyCount: make(map[string]int, 0),
 		}
 		p.Posts = append(p.Posts, post)
 	}
@@ -216,7 +220,7 @@ func (p *Processor) ExportResult(path string) error {
 	dataToFlush := make([][]string, len(p.Posts))
 	group := sync.WaitGroup{}
 	barLock := sync.Mutex{}
-	limitChan := make(chan struct{}, 5)
+	limitChan := make(chan struct{}, p.Concurrency)
 	group.Add(len(p.Posts))
 	for i, post := range p.Posts {
 		limitChan <- struct{}{}
@@ -234,6 +238,7 @@ func (p *Processor) ExportResult(path string) error {
 			toWriteDate = append(toWriteDate, tools.RemoveMark(slices))
 			for _, v := range p.EmoKey {
 				toWriteDate = append(toWriteDate, strconv.Itoa(countMap[v]))
+				p.Posts[i].EmoKeyCount[tools.ENEmoKey(v)] = countMap[v]
 				p.Posts[i].TimeData = append(p.Posts[i].TimeData, countMap[v])
 			}
 			p.Posts[i].TimeData = append(p.Posts[i].TimeData, post.Likes, post.Comments, post.Shares)
@@ -248,7 +253,23 @@ func (p *Processor) ExportResult(path string) error {
 	group.Wait()
 	w.WriteAll(dataToFlush)
 	w.Flush()
+	return p.FlushToDB()
+}
+func (p *Processor) FlushToDB() error {
+	if !p.ToDB {
+		return nil
+	}
+	db, err := database.NewPostDB()
+	if err != nil {
+		return err
+	}
+	err = db.NewPostsTable(p.EmoKey)
+	if err != nil {
+		return err
+	}
+	db.InsertData(p.Posts, p.EmoKey)
 	return nil
+
 }
 func (p *Processor) ExportResultByTime(path string) error {
 	bar := progressbar.Default(int64(len(p.Posts)), "开始计算并导出按时间聚合的结果")

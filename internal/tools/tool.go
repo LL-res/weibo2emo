@@ -209,3 +209,29 @@ func DetectCSV(file *os.File) (*csv.Reader, error) {
 	result.FieldsPerRecord = -1
 	return result, nil
 }
+func ENEmoKey(key string) string {
+	switch key {
+	case "死亡词":
+		return "Death"
+	case "仇视词":
+		return "Hatred"
+	case "脏话词":
+		return "Swear"
+	case "暂定词":
+		return "Temporary"
+	case "提及恐慌客体":
+		return "Panic_object"
+	case "提及紧缺物资":
+		return "Short_supply"
+	case "提及政府当局":
+		return "About_regime"
+	case "提及感官不适":
+		return "Disturbing"
+	default:
+		strs := strings.Split(key, "(")
+		if len(strs) < 2 {
+			return key
+		}
+		return strings.TrimSuffix(strs[len(strs)-1], ")")
+	}
+}
